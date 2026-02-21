@@ -1,8 +1,6 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>  // Use the standard ESP32Servo library
-#include <Wire.h>
 #include <Adafruit_INA219.h>
-#include <RadioLib.h>
 
 // --- Pin Mapping ---
 const int PIN_MOSFET = D3;
@@ -14,7 +12,6 @@ const int PIN_MISO   = D9;
 const int PIN_MOSI   = D10;
 
 // Objects
-// CC1101 radio = new Module(PIN_CSN, PIN_GDO0, RADIOLIB_NC, RADIOLIB_NC);
 Adafruit_INA219 ina219;
 Servo myServo; 
 
@@ -39,10 +36,6 @@ void setup() {
     // 2. Setup INA219
     if (!ina219.begin()) Serial.println("[-] INA219 Fail!");
 
-    // 3. Setup Radio (RadioLib)
-    SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_CSN);
-    int state = radio.begin(433.0, 4.8, 48.0, 10, 16, 0);
-    if (state == RADIOLIB_ERR_NONE) Serial.println("[+] Radio: OK");
 
     Serial.println(F("\n--- SYSTEM READY (270° MOD) ---"));
     Serial.println(F("Commands: 'on', 'off', or angle '0'-'270'"));
