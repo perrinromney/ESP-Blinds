@@ -1,71 +1,86 @@
-#include <WiFi.h>
-#include <ETH.h>
+#include <Arduino.h>
+#include <ESP32Servo.h>  // Use the standard ESP32Servo library
+#include <Wire.h>
+#include <Adafruit_INA219.h>
+#include <RadioLib.h>
 
-const char* ssid = "ROMNEY";
-const char* password = "TikkaHunter";
+// --- Pin Mapping ---
+const int PIN_MOSFET = D3;
+const int PIN_SERVO  = D2; // XIAO D2
+const int PIN_CSN    = D0; // D0
+const int PIN_GDO0   = D1;  // D1
+const int PIN_SCK    = D8;
+const int PIN_MISO   = D9;
+const int PIN_MOSI   = D10;
 
-// Define the pins exactly for WT32-ETH01
-#define ETH_PHY_ADDR     1
-#define ETH_PHY_POWER    16
-#define ETH_PHY_MDC      23
-#define ETH_PHY_MDIO     18
-#define ETH_PHY_TYPE     ETH_PHY_LAN8720
-#define ETH_CLK_MODE     ETH_CLOCK_GPIO0_IN // If this fails, try ETH_CLOCK_GPIO17_OUT
-
-bool wifiSuccess = false;
-bool ethSuccess = false;
+// Objects
+CC1101 radio = new Module(PIN_CSN, PIN_GDO0, RADIOLIB_NC, RADIOLIB_NC);
+Adafruit_INA219 ina219;
+Servo myServo; 
 
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
-  Serial.println("\n--- WT32-ETH01 Hardware Isolation Test ---");
+    pinMode(PIN_MOSFET, OUTPUT);
+    digitalWrite(PIN_MOSFET, LOW);
 
-  // 1. TEST WIFI FIRST
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting WiFi");
-  int counter = 0;
-  while (WiFi.status() != WL_CONNECTED && counter < 15) {
-    delay(500); Serial.print("."); counter++;
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\n[PASS] WiFi Connected.");
-    wifiSuccess = true;
-    // IMPORTANT: Now we turn it OFF to give Ethernet full power/bus access
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    Serial.println("WiFi disabled to isolate Ethernet hardware...");
-    delay(1000); 
-  }
+    Serial.begin(115200);
+    while (!Serial) delay(10);
+    
 
-  // 2. HARD RESET ETHERNET
-  pinMode(ETH_PHY_POWER, OUTPUT);
-  digitalWrite(ETH_PHY_POWER, LOW);
-  delay(500);
-  digitalWrite(ETH_PHY_POWER, HIGH);
-  delay(500);
+    // 1. Setup Servo for ESP32-C3
+    // We allocate a timer explicitly for the C3's LEDC hardware
+    ESP32PWM::allocateTimer(0);
+    myServo.setPeriodHertz(50); // Standard 50Hz for Servos
+    
+    // 270 Degree Mapping: 500us (0°) to 2500us (270°)
+    if (!myServo.attach(PIN_SERVO, 500, 2500)) {
+        Serial.println("[-] Servo Attach Failed!");
+    }
 
-  // 3. TEST ETHERNET
-  Serial.println("Testing Ethernet...");
-  // Using the Core 3.x specific begin
-  bool ethStarted = ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_MDC, ETH_PHY_MDIO, -1, ETH_CLK_MODE);
+    // 2. Setup INA219
+    if (!ina219.begin()) Serial.println("[-] INA219 Fail!");
 
-  counter = 0;
-  while (ETH.localIP().toString() == "0.0.0.0" && counter < 20) {
-    delay(500); Serial.print("."); counter++;
-  }
+    // 3. Setup Radio (RadioLib)
+    SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_CSN);
+    int state = radio.begin(433.0, 4.8, 48.0, 10, 16, 0);
+    if (state == RADIOLIB_ERR_NONE) Serial.println("[+] Radio: OK");
 
-  if (ETH.localIP().toString() != "0.0.0.0") {
-    Serial.println("\n[PASS] Ethernet Connected!");
-    ethSuccess = true;
-  } else {
-    Serial.println("\n[FAIL] Ethernet still timing out.");
-  }
-
-  // Final Results
-  Serial.println("\n========= FINAL RESULTS =========");
-  Serial.print("WIFI (Initial): "); Serial.println(wifiSuccess ? "SUCCESS" : "FAILED");
-  Serial.print("ETHERNET:       "); Serial.println(ethSuccess ? "SUCCESS" : "FAILED");
+    Serial.println(F("\n--- SYSTEM READY (270° MOD) ---"));
+    Serial.println(F("Commands: 'on', 'off', or angle '0'-'270'"));
 }
 
-void loop() {}
+void loop() {
+    if (Serial.available() > 0) {
+        String input = Serial.readStringUntil('\n');
+        input.trim();
+
+        if (input.equalsIgnoreCase("on")) {
+            digitalWrite(PIN_MOSFET, HIGH);
+            Serial.println(F("[!] MOSFET CLOSED (Power ON)"));
+        } 
+        else if (input.equalsIgnoreCase("off")) {
+            digitalWrite(PIN_MOSFET, LOW);
+            Serial.println(F("[!] MOSFET OPEN (Power OFF)"));
+        } 
+        else {
+            float targetAngle = input.toFloat();
+            
+            // Constrain input to the physical 270 limit
+            if (targetAngle >= 0 && targetAngle <= 270) {
+                Serial.printf("Moving to: %.1f°\n", targetAngle);
+                
+                // The .write() function in ESP32Servo maps 0-180 
+                // We use map() to translate our 0-270 request to that scale
+                int pulseToMove = map(targetAngle, 0, 270, 0, 180);
+                myServo.write(pulseToMove); 
+
+                // Give it time to move (Blocking simulation)
+                delay(1000); 
+                
+                float ma = ina219.getCurrent_mA();
+                Serial.printf("Position reached. Current: %.1f mA\n", ma);
+            } else {
+                Serial.println("[-] Out of range (0-270 only)");
+            }
+        }
+    }
+}
