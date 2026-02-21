@@ -14,7 +14,7 @@ const int PIN_MISO   = D9;
 const int PIN_MOSI   = D10;
 
 // Objects
-CC1101 radio = new Module(PIN_CSN, PIN_GDO0, RADIOLIB_NC, RADIOLIB_NC);
+// CC1101 radio = new Module(PIN_CSN, PIN_GDO0, RADIOLIB_NC, RADIOLIB_NC);
 Adafruit_INA219 ina219;
 Servo myServo; 
 
