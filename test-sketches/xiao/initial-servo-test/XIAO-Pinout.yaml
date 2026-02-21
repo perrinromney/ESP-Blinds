@@ -1,0 +1,43 @@
+# SILENT SHADOW - XIAO ENDPOINT WIRING SPECIFICATION
+# Architecture: Direct-to-Battery with Upstream Monitoring
+# Version: 1.1 (Final)
+
+device: XIAO_ESP32C3
+power_source: 18650_Li-ion_Battery_3.7V
+
+connections:
+  power_rail:
+    - battery_pos:
+        color: Red
+        to: [XIAO_BAT_PLUS, INA219_VIN_PLUS]
+        note: "Direct connection ensures voltage monitoring even when MOSFET is off"
+    - battery_neg:
+        color: Black
+        to: [XIAO_BAT_MINUS, MOSFET_INPUT_NEG, SERVO_GND, INA219_GND]
+        note: "Universal system common ground"
+
+  radio_cc1101:
+    - vcc: { from: XIAO_3V3, to: CC1101_VCC }
+    - gnd: { from: XIAO_GND, to: CC1101_GND }
+    - sck: { from: XIAO_D8_GPIO8, to: CC1101_SCK }
+    - miso: { from: XIAO_D9_GPIO9, to: CC1101_MISO }
+    - mosi: { from: XIAO_D10_GPIO10, to: CC1101_MOSI }
+    - csn: { from: XIAO_D0_GPIO21, to: CC1101_CSN }
+    - gdo0_irq: { from: XIAO_D1_GPIO1, to: CC1101_GDO0, note: "Wake-up trigger" }
+
+  monitoring_ina219:
+    - vcc: { from: XIAO_3V3, to: INA219_VCC }
+    - sda: { from: XIAO_D4_GPIO5, to: INA219_SDA }
+    - scl: { from: XIAO_D5_GPIO6, to: INA219_SCL }
+    - vin_minus: { from: INA219_VIN_MINUS, to: MOSFET_INPUT_POS, note: "Current path to switch" }
+
+  actuator_servo:
+    - gate_control: { from: XIAO_D3_GPIO4, to: MOSFET_GATE_SIGNAL }
+    - pwm_signal: { from: XIAO_D2_GPIO3, to: SERVO_SIGNAL_YELLOW }
+    - servo_vcc: { from: MOSFET_OUTPUT_POS, to: SERVO_VCC_RED }
+    - capacitor: { type: "1000uF Electrolytic", across: [SERVO_VCC_RED, SERVO_GND] }
+
+safety_parameters:
+  low_battery_cutoff: 3.4V
+  critical_sag_limit: 3.0V
+  max_current_stall: 1800mA
